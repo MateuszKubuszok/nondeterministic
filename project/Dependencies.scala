@@ -5,13 +5,13 @@ import Dependencies._
 object Dependencies {
 
   // scala version
-  val scalaOrganization  = "org.scala-lang"
-  val scalaVersion       = "2.13.3"
+  val scalaOrganization = "org.scala-lang"
+  val scalaVersion = "2.13.3"
   val crossScalaVersions = Seq("2.12.10", "2.13.3")
 
   // libraries versions
-  val catsVersion       = "2.2.0"
-  val specs2Version     = "4.10.3"
+  val catsVersion = "2.2.0"
+  val specs2Version = "4.10.3"
 
   // resolvers
   val resolvers = Seq(
@@ -20,13 +20,14 @@ object Dependencies {
   )
 
   // compiler plugins
-  val kindProjector    = "org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full
+  val kindProjector = "org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full
   // functional libraries
-  val cats              = "org.typelevel" %% "cats-core" % catsVersion
-  val catsFree          = "org.typelevel" %% "cats-free" % catsVersion
-  val catsLaws          = "org.typelevel" %% "cats-laws" % catsVersion
+  val cats = "org.typelevel" %% "cats-core" % catsVersion
+  val catsFree = "org.typelevel" %% "cats-free" % catsVersion
+  val catsLaws = "org.typelevel" %% "cats-laws" % catsVersion
+  val newtype = "io.estatico" %% "newtype" % "0.4.4"
   // testing
-  val spec2Core       = "org.specs2" %% "specs2-core" % specs2Version
+  val spec2Core = "org.specs2" %% "specs2-core" % specs2Version
   val spec2Scalacheck = "org.specs2" %% "specs2-scalacheck" % specs2Version
 }
 
@@ -41,7 +42,8 @@ trait Dependencies {
 
   val mainDeps = Seq(
     cats,
-    catsFree
+    catsFree,
+    newtype
   )
 
   val testDeps = Seq(catsLaws, spec2Core, spec2Scalacheck)
@@ -61,14 +63,17 @@ trait Dependencies {
   implicit final class DependsOnProject(project: Project) {
 
     private val testConfigurations = Set("test", "fun", "it")
+
     private def findCompileAndTestConfigs(p: Project) =
       (p.configurations.map(_.name).toSet intersect testConfigurations) + "compile"
 
     private val thisProjectsConfigs = findCompileAndTestConfigs(project)
+
     private def generateDepsForProject(p: Project) =
       p % (thisProjectsConfigs intersect findCompileAndTestConfigs(p) map (c => s"$c->$c") mkString ";")
 
     def compileAndTestDependsOn(projects: Project*): Project =
       project dependsOn (projects.map(generateDepsForProject): _*)
   }
+
 }
