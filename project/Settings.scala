@@ -18,8 +18,8 @@ object Settings extends Dependencies {
   private val commonSettings = Seq(
     organization := "com.kubuszok",
 
-    scalaOrganization  := scalaOrganizationUsed,
-    scalaVersion       := scalaVersionUsed,
+    scalaOrganization := scalaOrganizationUsed,
+    scalaVersion := scalaVersionUsed,
     crossScalaVersions := crossScalaVersionsUsed
   )
 
@@ -134,6 +134,7 @@ object Settings extends Dependencies {
     resolvers ++= commonResolvers,
 
     libraryDependencies ++= mainDeps,
+    autoCompilerPlugins := true,
     addCompilerPlugin(Dependencies.kindProjector),
 
     Compile / scalafmtOnCompile := true,
@@ -151,13 +152,17 @@ object Settings extends Dependencies {
       Wart.NonUnitStatements,
       Wart.Nothing
     )
-  )
+  ) ++ Seq(libraryDependencies ++= (if (scalaVersion.value.startsWith("2.13")) Nil else Seq(
+    "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided",
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
+    compilerPlugin(Dependencies.macroParadise)
+  )))
 
   implicit final class RunConfigurator(project: Project) {
 
     def configureRun(main: String): Project = project
       .settings(inTask(assembly)(Seq(
-        assemblyJarName := s"${name.value}.jar",
+        assemblyJarName := s"${ name.value }.jar",
         assemblyMergeStrategy := {
           case strategy => MergeStrategy.defaultMergeStrategy(strategy)
         },
@@ -185,7 +190,7 @@ object Settings extends Dependencies {
     protected def configureSequential(requiresFork: Boolean): Project = configure(requiresFork)
       .settings(inConfig(config)(Seq(
         testOptions += Argument(Specs2, "sequential"),
-        parallelExecution  := false
+        parallelExecution := false
       )))
   }
 
@@ -196,7 +201,7 @@ object Settings extends Dependencies {
     def setDescription(newDescription: String): Project = project.settings(description := newDescription)
 
     def setInitialImport(newInitialCommand: String*): Project =
-      project.settings(initialCommands := s"import ${("nondeterministic._" +: newInitialCommand).mkString(", ")}")
+      project.settings(initialCommands := s"import ${ ("nondeterministic._" +: newInitialCommand).mkString(", ") }")
   }
 
   implicit final class RootConfigurator(project: Project) {
@@ -229,4 +234,5 @@ object Settings extends Dependencies {
 
     def configureIntegrationTestsSequential(requiresFork: Boolean = false): Project = configureSequential(requiresFork)
   }
+
 }

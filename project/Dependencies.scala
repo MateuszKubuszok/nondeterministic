@@ -21,6 +21,7 @@ object Dependencies {
 
   // compiler plugins
   val kindProjector = "org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full
+  val macroParadise = "org.scalamacros" % "paradise" % "2.1.1" cross sbt.CrossVersion.full
   // functional libraries
   val cats = "org.typelevel" %% "cats-core" % catsVersion
   val catsFree = "org.typelevel" %% "cats-free" % catsVersion
