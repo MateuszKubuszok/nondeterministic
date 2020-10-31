@@ -14,9 +14,9 @@ def checkSomePage(user: User): F[Page]
 
 // this makes effects non-deterministic
 // we can combine 2 branches and only one of them will be followed
-def ndLogout(user: User): NonDeterministic[F, Unit] = NonDeterministic.lift(logout(user))
-def ndCheckPage(user: User): NonDeterministic[F, Unit] => NonDeterministic.lift(checkSomePage(user))
-def ndUserBehavior(user: User): NonDeterministic[F, Unit] =
+def ndLogout(user: User): NonDeterministicT[F, Unit] = NonDeterministicT.liftF(logout(user))
+def ndCheckPage(user: User): NonDeterministicT[F, Unit] => NonDeterministicT.liftF(checkSomePage(user))
+def ndUserBehavior(user: User): NonDeterministicT[F, Unit] =
   // The first path will have its likelihood increased 9 times,
   // the second path will have its original weight (1),
   // which should result in branch picking the first branch 9 times out of 9+1=10,
@@ -25,7 +25,7 @@ def ndUserBehavior(user: User): NonDeterministic[F, Unit] =
 
 // this should create user and then randomly decide between
 // checking page and logging out - once logged out, it should finish
-NonDeterministic.lift(createUser(newUser)) // NonDeterministic[F, User]
-  .flatMap(ndUserBehavior)                 // NonDeterministic[F, Unit]
+NonDeterministicT.liftF(createUser(newUser)) // NonDeterministicT[F, User]
+  .flatMap(ndUserBehavior)                 // NonDeterministicT[F, Unit]
   .execute(Decider.random())               // F[Unit]
 ```

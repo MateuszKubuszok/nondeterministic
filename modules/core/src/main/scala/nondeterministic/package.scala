@@ -1,4 +1,4 @@
-import cats.{ ~>, Applicative, Functor, Monad, SemigroupK }
+import cats.{ ~>, Applicative, Eval, Functor, Monad, SemigroupK }
 import cats.data.NonEmptyChain
 import cats.free.Free
 import cats.implicits._
@@ -24,7 +24,7 @@ package object nondeterministic {
     }
 
     /** required to run half the things in Free */
-    implicit def choicesApplicative[F[_] : Functor]: Functor[Choices[F, *]] =
+    implicit def choicesApplicative[F[_]: Functor]: Functor[Choices[F, *]] =
       new Functor[Choices[F, *]] {
 
         def map[A, B](choices: Choices[F, A])(f: A => B): Choices[F, B] =
@@ -40,45 +40,63 @@ package object nondeterministic {
   }
 
   /** Represents a computation that might involve a non-deterministic choice */
-  @newtype final case class NonDeterministic[F[_], A](toFree: Free[Choices[F, *], A]) {
+  @newtype final case class NonDeterministicT[F[_], A](toFree: Free[Choices[F, *], A]) {
 
     /** Returns list of possible choices by their weights */
-    def toChoices(implicit F: Applicative[F]): Choices[F, NonDeterministic[F, A]] =
+    def toChoices(implicit F: Applicative[F]): Choices[F, NonDeterministicT[F, A]] =
       toFree
         .fold(
-          (a: A) => Choices.one(F.pure(Free.pure[Choices[F, *], A](a))),
+          (a:       A) => Choices.one(F.pure(Free.pure[Choices[F, *], A](a))),
           (choices: Choices[F, Free[Choices[F, *], A]]) => choices
         )
-        .map(NonDeterministic(_))
+        .map(NonDeterministicT(_))
 
-    /** Scale up the weight of each Choice (useful if you want to combine NonDeterministic using <+>) */
-    def scale(multiplier: Int)(implicit F: Applicative[F]): NonDeterministic[F, A] =
-      NonDeterministic.suspend[F, NonDeterministic[F, A]](Choices.scale(multiplier)(toChoices)).flatten
+    /** Scale up the weight of each Choice (useful if you want to combine NonDeterministicT using <+>) */
+    def scale(multiplier: Int)(implicit F: Applicative[F]): NonDeterministicT[F, A] =
+      NonDeterministicT.suspend[F, NonDeterministicT[F, A]](Choices.scale(multiplier)(toChoices)).flatten
+
+    /** Treat this value as a single value when composing, inner weights will be used if this branch is picked */
+    def normalize(implicit F: Applicative[F]): NonDeterministicT[F, A] =
+      NonDeterministicT.liftF(F.unit) >> this
 
     /** Run computations picking branches using provided Decider */
     def execute(decider: Decider[F])(implicit M: Monad[F]): F[A] = toFree.foldMap(decider)
   }
 
-  object NonDeterministic {
+  object NonDeterministicT {
 
-    def suspend[F[_], A](choices: Choices[F, A]): NonDeterministic[F, A] = NonDeterministic(Free.liftF(choices))
+    def suspend[F[_], A](choices: Choices[F, A]): NonDeterministicT[F, A] = NonDeterministicT(Free.liftF(choices))
 
-    def lift[F[_], A](fa: F[A]): NonDeterministic[F, A] = NonDeterministic(Free.liftF(Choices.one(fa)))
+    def liftF[F[_], A](fa: F[A]): NonDeterministicT[F, A] = NonDeterministicT(Free.liftF(Choices.one(fa)))
 
-    def pure[F[_], A](value: A): NonDeterministic[F, A] = NonDeterministic(Free.pure(value))
+    def pure[F[_], A](value: A): NonDeterministicT[F, A] = NonDeterministicT(Free.pure(value))
 
     /** Required since we wrapped up Free */
     @SuppressWarnings(Array("org.wartremover.warts.AsInstanceOf"))
-    implicit def nonDeterministicMonad[F[_]]: Monad[NonDeterministic[F, *]] =
-      implicitly[Monad[Free[Choices[F, *], *]]].asInstanceOf[Monad[NonDeterministic[F, *]]] // Coercible failed me :(
+    implicit def nonDeterministicMonad[F[_]]: Monad[NonDeterministicT[F, *]] =
+      implicitly[Monad[Free[Choices[F, *], *]]].asInstanceOf[Monad[NonDeterministicT[F, *]]] // Coercible failed me :(
 
     /** Allow ndfa <+> ndfa if F and A matches (concatenate inner Chains) */
-    implicit def nonDeterministicMonoidK[F[_] : Applicative]: SemigroupK[NonDeterministic[F, *]] =
-      new SemigroupK[NonDeterministic[F, *]] {
+    implicit def nonDeterministicMonoidK[F[_]: Applicative]: SemigroupK[NonDeterministicT[F, *]] =
+      new SemigroupK[NonDeterministicT[F, *]] {
 
-        def combineK[A](x: NonDeterministic[F, A], y: NonDeterministic[F, A]): NonDeterministic[F, A] =
-          NonDeterministic.suspend[F, NonDeterministic[F, A]](x.toChoices <+> y.toChoices).flatMap(identity)
+        def combineK[A](x: NonDeterministicT[F, A], y: NonDeterministicT[F, A]): NonDeterministicT[F, A] =
+          NonDeterministicT.suspend[F, NonDeterministicT[F, A]](x.toChoices <+> y.toChoices).flatMap(identity)
       }
+  }
+
+  /** Lazy, NonDeterministic computation without other side-effects */
+  type NonDeterministic[A] = NonDeterministicT[Eval, A]
+
+  object NonDeterministic {
+
+    def apply[A](free: Free[Choices[Eval, *], A]): NonDeterministic[A] = NonDeterministicT[Eval, A](free)
+
+    def suspend[A](choices: Choices[Eval, A]): NonDeterministic[A] = NonDeterministicT.suspend(choices)
+
+    def eval[A](eval: Eval[A]): NonDeterministic[A] = NonDeterministicT.liftF(eval)
+
+    def pure[A](value: A): NonDeterministic[A] = NonDeterministicT.pure(value)
   }
 
   /** Picks branch when we run the computation */
@@ -94,7 +112,7 @@ package object nondeterministic {
         else {
           NonEmptyChain.fromChain(choices.tail) match {
             case Some(tail) => byWeight[A](tail, weight - choices.head.weight)
-            case None => choices.head.fa
+            case None       => choices.head.fa
           }
         }
 
